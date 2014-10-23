@@ -1,0 +1,7 @@
+[run]
+branch = True
+source = aspis
+omit = aspis/tests/*
+
+[report]
+ignore-errors = True
