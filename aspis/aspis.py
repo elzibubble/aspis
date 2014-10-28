@@ -68,16 +68,60 @@ class Aspis(object):
         self.c.add('base', [], code)
 
 
+def metafly(name, parents, attrs):
+    @classmethod
+    def get_instance(cls, *args, **kwargs):
+        it = cls.__instance
+        it._clear()
+        return it
+    cls = type(name, parents, attrs)
+    cls.__instance = cls()
+    cls.__new__ = get_instance
+    return cls
+
+
 class Aspl(object):
-    @staticmethod
-    def show(atom, arity):
-        return ["#show ", atom, "/", arity, "."]
+    __metaclass__ = metafly
+
+    def __init__(self):
+        self._clear()
+
+    def _clear(self):
+        self._buf = []
+
+    def __str__(self):
+        self._buf = [flatten(self._buf)]
+        return self._buf[0]
+
+    def __iadd__(self, rhs):
+        if type(rhs) in (list, tuple):
+            self._buf.extend(rhs)
+        else:
+            self._buf.append(rhs)
+        return self
+
+    def __getattr__(self, name):
+        if name == 'neg':
+            self._buf += "not "
+        else:
+            self._buf += name
+        return self
+
+    def __call__(self, *args):
+        self._buf += join(args, '(, )')
+        # this means calls can't be chained beyond the first (); but is
+        # essential to allow for object sharing
+        return flatten(self._buf)
 
     @staticmethod
     def term(name, *args):
         if len(args) == 0:
             return name
         return [name, join(args, '(, )')]
+
+    @staticmethod
+    def fact(name, *args):
+        return [Aspl.term(name, *args), '.']
 
     @staticmethod
     def rule(lhs, *conds):
@@ -100,24 +144,33 @@ class Aspl(object):
                      uop, ub], ' ')
 
     @staticmethod
-    def aggr_element(terms, lits=[], conds=[]):
+    def aggr_element(terms, lits, conds=[]):
         terms = join(terms, ",")
-        lits = join(lits, ", ", start=": ")
-        conds = join(conds, ", ", start=": ")
+        lits = join(lits, ", ", start=': ' if terms else '')
+        conds = join(conds, ", ", start=': ')
         return [terms, lits, conds]
 
     @staticmethod
     def minimize(*elements):
-        return Aspl.optimise('#minimize', elements)
+        return Aspl.optimize('#minimize', elements)
 
     @staticmethod
-    def optimise(oop, elements):
-        elements = [Aspis.opt_element(*e) if type(e) == tuple else e
+    def maximize(*elements):
+        return Aspl.optimize('#maximize', elements)
+
+    @staticmethod
+    def optimize(oop, elements):
+        elements = [Aspl.opt_element(*e) if type(e) == tuple else e
                     for e in elements]
-        return join([oop, join(elements, "; ", start="{ ", end=" }")], ' ')
+        return join([oop, join(elements, "; ", start="{ ", end=" }")], ' ',
+                    end='.')
 
     @staticmethod
     def opt_element(weight, priority=0, lits=[]):
-        wap = join([weight,priority], "@")
+        wap = join([weight, priority], "@")
         lits = join(lits, ", ", start=": ")
         return [wap, lits]
+
+    @staticmethod
+    def show(atom, arity):
+        return ["#show ", atom, "/", arity, "."]

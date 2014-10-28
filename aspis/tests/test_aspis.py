@@ -13,9 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import testtools
 
 from aspis import aspis
+
+
+TEST_DIR = os.path.dirname(__file__)
+Z = aspis.Aspl
 
 
 class TestAspis(testtools.TestCase):
@@ -25,52 +30,73 @@ class TestAspis(testtools.TestCase):
         super(TestAspis, self).setUp()
         self.asp = aspis.Aspis()
 
-    def test_load(self):
-        self.asp.load('sched.lp4')
+    def tr(self, exp, act):
+        self.assertEquals(exp, aspis.flatten(act))
+
+    def solve(self, exp):
         self.asp.solve()
-        self.assertEquals('[s(a,1), s(a,2), s(b,3)]', str(self.asp.optimum))
+        self.assertEquals(exp, str(self.asp.optimum))
 
+    def test_load(self):
+        self.asp.load(os.path.join(TEST_DIR, 'sched.lp4'))
+        self.solve('[s(a,1), s(a,2), s(b,3)]')
 
+    def test_term(self):
+        self.tr("host(a,1,1)", Z.term('host', 'a', 1, 1))
 
-#g = Aspl()
-#gasp.add(g.term('host', 'a', 1, 1))
+    def test_term_fancy(self):
+        self.tr("host(a,1,1)", Z().host('a', 1, 1))
 
-#g.aggr_element(g.term('s', 'H', 'I'), g.term('host', 'H'))
+    def test_not_term_fancy(self):
+        self.tr("not host(a,1,1)", Z().neg.host('a', 1, 1))
 
-#gasp.add(g.rule(g.term('s', 'H', 'IA'),
-#             g.term('s', 'H', 'IB'),
-#             g.term('affinity', 'IA', 'IB')))
+    def test_fact(self):
+        self.tr("s(H,IA).",
+                Z.fact(Z().s('H', 'IA')))
 
-#print ">>>> 1 { s(H,I): host(H) } 1 :- inst(I)."
-##gasp.add(g.rule(
-##    g.count(1, 1, [g.aggr_element([], ['s(H,I)'], ['host(H)'])]),
-##    g.term('inst', 'I')))
-#gasp.add(g.rule(
-#    g.count(1, 1, [([], ['s(H,I)'], ['host(H)'])]),
-#    g.term('inst', 'I')))
+    def test_rule(self):
+        self.tr("s(H,IA) :- s(H,IB), affinity(IA,IB).",
+                Z.rule(Z().s('H', 'IA'),
+                       Z().s('H', 'IB'),
+                       Z().affinity('IA', 'IB')))
 
-#print ">>>> 0 #sum { USED,s: s(H,I): inst_mem(I,USED) } FREE :- host_mem(H, FREE)."
-#lit = g.term('s', 'H', 'I')
-#cond = g.term('inst_mem', 'I', 'USED')
-#gasp.add(g.rule(
-#    g.sum(0, 'FREE', [g.aggr_element(['USED', 's'], [lit], [cond])]),
-#    'host_mem(H, FREE)'))
+    def test_choice(self):
+        self.tr("1 #count { s(H,I): host(H) } 1 :- inst(I).",
+                Z.rule(Z.count(1, 1,
+                               [Z.aggr_element([], ['s(H,I)'], ['host(H)'])]),
+                       Z().inst('I')))
 
-#print ">>>> #minimize { U@O: s(H,I), inst_mem(I, U), host_ord(H,O) }."
-#gasp.add(g.minimize(('U', 'O',
-#                     ['s(H,I)', 'inst_mem(I, U)', 'host_ord(H,O)'])))
+    def test_choice_tuple(self):
+        self.tr("1 #count { s(H,I): host(H) } 1 :- inst(I).",
+                Z.rule(Z.count(1, 1, [([], ['s(H,I)'], ['host(H)'])]),
+                       Z.term('inst', 'I')))
 
-## s(H,IA) :- s(H,IB), affinity(IA,IB).
-## not s(H,IA) :- host(H), s(H,IB), antiaffinity(IA,IB).
-## s(H,I) :- inst_cap(I,C), host_cap(H,C).
+    def test_aggr(self):
+        self.tr("0 #sum { USED,s: s(H,I): inst_mem(I,USED) } FREE"
+                + " :- host_mem(H, FREE).",
+                Z.rule(Z.sum(0, 'FREE', [(['USED', 's'],
+                                          [Z().s('H', 'I')],
+                                          [Z().inst_mem('I', 'USED')])]),
+                       'host_mem(H, FREE)'))
 
+    def test_minimize(self):
+        self.tr("#minimize { U@O: s(H,I), inst_mem(I, U), host_ord(H,O) }.",
+                Z.minimize(('U', 'O',
+                            ['s(H,I)', 'inst_mem(I, U)', 'host_ord(H,O)'])))
 
-##info = {
-##    'h1': {'total_mem': 1024},
-##    'h2': {'total_mem': 1024},
-##}
-##for k, v in info.items():
-##    for sk, sv in v.items():
-##        gasp.add(g.term(g.atom('host_%s' % sk, k, sv)))
-##gasp.solve()
-##print gasp.optimum
+    def test_maximize(self):
+        self.tr("#maximize { U@O: s(H,I) }.",
+                Z.maximize(('U', 'O', ['s(H,I)'])))
+
+    def test_dyn_facts(self):
+        info = {
+            'h1': {'mem': 1},
+            'h2': {'mem': 2},
+        }
+        for k, v in info.items():
+            for sk, sv in v.items():
+                self.asp.add(Z.term('host_%s' % sk, k, sv))
+        self.asp.add(Z.rule(Z().p('H'),
+                            Z().host_mem('H', 1)))
+        self.asp.add(Z.show('p', 1))
+        self.solve('[p(h1)]')
